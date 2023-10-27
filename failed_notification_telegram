@@ -1,0 +1,37 @@
+from airflow import DAG
+from datetime import datetime
+from airflow.utils.dates import days_ago
+from airflow.operators.python_operator import PythonOperator
+from airflow.providers.telegram.operators.telegram import TelegramOperator
+from airflow.exceptions import AirflowFailException
+
+
+def faill_function(context):
+    send_message = TelegramOperator(
+        task_id='send_message_telegram',
+        telegram_conn_id='telegram_id',
+        chat_id='-1001911399722',
+        text='Fail!',
+        dag=dag)
+    return send_message.execute(context=context)
+
+
+def func_raise():
+    raise AirflowFailException
+
+
+with DAG(dag_id = 'dag',
+         schedule_interval = '@daily',
+         on_failure_callback = faill_function,
+         start_date = datetime(2021, 1, 1),
+         end_date = datetime(2021, 1, 4),
+    ) as dag:
+
+
+    func_raise = PythonOperator(
+        task_id = 'func_raise',
+        python_callable = func_raise,
+    )
+
+
+func_raise
