@@ -1,2 +1,1 @@
-# airflow_dags
-my airflow dags
+# Мои даги airflow
