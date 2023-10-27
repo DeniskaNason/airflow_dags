@@ -1,0 +1,73 @@
+from airflow import DAG
+from datetime import timedelta, datetime
+from airflow.operators.python_operator import PythonOperator
+import pandas as pd
+import sqlite3
+
+
+conn = sqlite3.connect('currency_data.db')
+
+
+def extract_currency_xcom_push(date, **context):
+    url = f"https://api.exchangerate.host/timeseries?start_date={date}&end_date={date}&base=EUR&symbols=USD&format=csv"
+    data = pd.read_csv(url)['rate'].values
+    context['ti'].xcom_push(key = 'return value', value = str(data[0]))
+
+
+def currency_xcom_pull(**context):
+    context['ti'].xcom_pull(key = 'return value', task_ids = 'extract_currency_xcom_push')
+
+
+def extract_data(date, tmp_file):
+    url = f'https://raw.githubusercontent.com/dm-novikov/stepik_airflow_course/main/data_new/{date}.csv'
+    data = pd.read_csv(url).to_csv(tmp_file)
+
+
+def insert_to_db(tmp_file, table_name, conn):
+    df = pd.read_csv(tmp_file)
+    df.to_sql(table_name, conn, if_exists='append', index=False)
+
+
+with DAG(dag_id = 'dag',
+         schedule_interval = '@daily',
+         start_date = datetime(2021, 1, 1),
+         end_date = datetime(2021, 1, 4),
+    ) as dag:
+
+
+    extract_currency_xcom_push = PythonOperator(
+        task_id = 'extract_currency_xcom_push',
+        python_callable = extract_currency_xcom_push,
+        op_kwargs = {'date': '{{ ds }}',
+                    }
+    )
+
+
+    currency_xcom_pull = PythonOperator(
+        task_id = 'currency_xcom_pull',
+        python_callable = currency_xcom_pull,
+    )
+
+
+    extract_data = PythonOperator(
+        task_id = 'extract_data',
+        python_callable = extract_data,
+        op_kwargs = {'date': '{{ ds }}',
+                     'tmp_file': '/tmp/data.csv'
+                     }
+    )
+
+
+    insert_data = PythonOperator(
+        task_id = 'insert_data',
+        python_callable = insert_to_db,
+        op_kwargs = {
+                    'tmp_file': '/tmp/data.csv',
+                    'table_name': 'data',
+                    'conn': conn,
+                    }
+    )
+
+
+extract_currency_xcom_push >> currency_xcom_pull
+extract_data >> insert_data
